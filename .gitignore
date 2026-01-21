@@ -1,0 +1,43 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary
+*.test
+
+# Output of go coverage
+coverage.out
+
+# Dependency directories
+vendor/
+
+# IDE
+.idea/
+.vscode/
+.claude/
+*.swp
+*.swo
+
+# direnv
+.direnv/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+wasm-build/faad2/
+wasm-build/*.o
+wasm-build/*.a
+
+# Nix
+result
+result-*
+
+# Test data (keep structure but not large files)
+testdata/*.m4a
+testdata/*.aac
+!testdata/.gitkeep
