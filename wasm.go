@@ -7,6 +7,7 @@ import (
 
 	"github.com/tetratelabs/wazero"
 	"github.com/tetratelabs/wazero/api"
+	"github.com/tetratelabs/wazero/imports/wasi_snapshot_preview1"
 )
 
 //go:embed faad2.wasm
@@ -30,14 +31,14 @@ type wasmContext struct {
 var (
 	globalCtx  *wasmContext
 	globalOnce sync.Once
-	globalErr  error
+	errGlobal  error
 )
 
 func getWasmContext() (*wasmContext, error) {
 	globalOnce.Do(func() {
-		globalCtx, globalErr = initWasmContext()
+		globalCtx, errGlobal = initWasmContext()
 	})
-	return globalCtx, globalErr
+	return globalCtx, errGlobal
 }
 
 func initWasmContext() (*wasmContext, error) {
@@ -45,13 +46,31 @@ func initWasmContext() (*wasmContext, error) {
 
 	rt := wazero.NewRuntime(ctx)
 
+	// Instantiate WASI for fd_close, fd_write, fd_seek
+	wasi_snapshot_preview1.MustInstantiate(ctx, rt)
+
+	// Provide the env module with emscripten_notify_memory_growth (no-op)
+	_, err := rt.NewHostModuleBuilder("env").
+		NewFunctionBuilder().
+		WithFunc(func(_ context.Context, _ uint32) {
+			// No-op: called when memory grows, we don't need to do anything
+		}).
+		Export("emscripten_notify_memory_growth").
+		Instantiate(ctx)
+	if err != nil {
+		rt.Close(ctx)
+		return nil, err
+	}
+
 	compiled, err := rt.CompileModule(ctx, faad2Wasm)
 	if err != nil {
+		rt.Close(ctx)
 		return nil, err
 	}
 
 	module, err := rt.InstantiateModule(ctx, compiled, wazero.NewModuleConfig())
 	if err != nil {
+		rt.Close(ctx)
 		return nil, err
 	}
 
@@ -77,7 +96,7 @@ func (w *wasmContext) malloc(size uint32) (uint32, error) {
 	if err != nil {
 		return 0, err
 	}
-	ptr := uint32(results[0])
+	ptr := uint32(results[0]) //nolint:gosec // WASM pointers are 32-bit
 	if ptr == 0 && size > 0 {
 		return 0, ErrOutOfMemory
 	}
@@ -97,6 +116,6 @@ func (w *wasmContext) write(ptr uint32, data []byte) bool {
 }
 
 // read copies data from WASM memory at the given pointer.
-func (w *wasmContext) read(ptr uint32, size uint32) ([]byte, bool) {
+func (w *wasmContext) read(ptr, size uint32) ([]byte, bool) {
 	return w.module.Memory().Read(ptr, size)
 }

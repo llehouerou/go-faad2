@@ -27,7 +27,7 @@ func NewDecoder() (*Decoder, error) {
 		return nil, err
 	}
 
-	ptr := uint32(results[0])
+	ptr := uint32(results[0]) //nolint:gosec // WASM pointers are 32-bit
 	if ptr == 0 {
 		return nil, ErrOutOfMemory
 	}
@@ -49,7 +49,7 @@ func (d *Decoder) Init(config []byte) error {
 	}
 
 	// Allocate memory for config
-	configPtr, err := d.wctx.malloc(uint32(len(config)))
+	configPtr, err := d.wctx.malloc(uint32(len(config))) //nolint:gosec // config is small (AAC spec)
 	if err != nil {
 		return err
 	}
@@ -83,7 +83,7 @@ func (d *Decoder) Init(config []byte) error {
 		return err
 	}
 
-	if int32(results[0]) < 0 {
+	if int32(results[0]) < 0 { //nolint:gosec // WASM returns signed status
 		return ErrInvalidConfig
 	}
 
@@ -114,7 +114,7 @@ func (d *Decoder) Decode(aacFrame []byte) ([]int16, error) {
 	}
 
 	// Allocate input buffer
-	inputPtr, err := d.wctx.malloc(uint32(len(aacFrame)))
+	inputPtr, err := d.wctx.malloc(uint32(len(aacFrame))) //nolint:gosec // frame size is bounded by AAC spec
 	if err != nil {
 		return nil, err
 	}
@@ -126,7 +126,7 @@ func (d *Decoder) Decode(aacFrame []byte) ([]int16, error) {
 
 	// Allocate output buffer (max samples per frame: 2048 * channels * 2 bytes)
 	maxSamples := 2048 * int(d.channels)
-	outputPtr, err := d.wctx.malloc(uint32(maxSamples * 2))
+	outputPtr, err := d.wctx.malloc(uint32(maxSamples * 2)) //nolint:gosec // bounded by AAC frame size
 	if err != nil {
 		return nil, err
 	}
@@ -138,19 +138,19 @@ func (d *Decoder) Decode(aacFrame []byte) ([]int16, error) {
 		uint64(inputPtr),
 		uint64(len(aacFrame)),
 		uint64(outputPtr),
-		uint64(maxSamples*2),
+		uint64(maxSamples*2), //nolint:gosec // bounded by AAC frame size
 	)
 	if err != nil {
 		return nil, err
 	}
 
-	numSamples := int32(results[0])
+	numSamples := int32(results[0]) //nolint:gosec // WASM returns signed sample count
 	if numSamples < 0 {
 		return nil, ErrDecodeFailed
 	}
 
 	// Read PCM output
-	pcmBytes, ok := d.wctx.read(outputPtr, uint32(numSamples*2))
+	pcmBytes, ok := d.wctx.read(outputPtr, uint32(numSamples*2)) //nolint:gosec // bounded by AAC frame size
 	if !ok {
 		return nil, ErrOutOfMemory
 	}

@@ -24,6 +24,9 @@ vendor/
 # direnv
 .direnv/
 
+# Documentation/plans
+docs/
+
 # OS
 .DS_Store
 Thumbs.db

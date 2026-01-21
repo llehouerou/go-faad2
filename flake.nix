@@ -33,9 +33,13 @@
 
             # Build tools
             gnumake
+            cmake
 
             # WASM build (for rebuilding faad2.wasm)
             emscripten
+
+            # Test file generation
+            ffmpeg
           ];
 
           shellHook = ''

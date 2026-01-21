@@ -1,5 +1,7 @@
 #include "decoder.h"
+#include <faad.h>
 #include <neaacdec.h>
+#include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 
