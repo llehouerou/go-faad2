@@ -17,13 +17,13 @@ type Decoder struct {
 }
 
 // NewDecoder creates a new AAC decoder.
-func NewDecoder() (*Decoder, error) {
-	wctx, err := getWasmContext()
+func NewDecoder(ctx context.Context) (*Decoder, error) {
+	wctx, err := getWasmContext(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	results, err := wctx.fnCreate.Call(context.Background())
+	results, err := wctx.fnCreate.Call(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -41,7 +41,7 @@ func NewDecoder() (*Decoder, error) {
 
 // Init initializes the decoder with AAC codec configuration
 // (typically from MP4 esds box or ADTS header).
-func (d *Decoder) Init(config []byte) error {
+func (d *Decoder) Init(ctx context.Context, config []byte) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
@@ -54,30 +54,30 @@ func (d *Decoder) Init(config []byte) error {
 	}
 
 	// Allocate memory for config
-	configPtr, err := d.wctx.malloc(uint32(len(config))) //nolint:gosec // config is small (AAC spec)
+	configPtr, err := d.wctx.malloc(ctx, uint32(len(config))) //nolint:gosec // config is small (AAC spec)
 	if err != nil {
 		return err
 	}
-	defer d.wctx.free(configPtr)
+	defer d.wctx.free(ctx, configPtr)
 
 	if !d.wctx.write(configPtr, config) {
 		return ErrOutOfMemory
 	}
 
 	// Allocate memory for output parameters
-	sampleRatePtr, err := d.wctx.malloc(8) // unsigned long
+	sampleRatePtr, err := d.wctx.malloc(ctx, 8) // unsigned long
 	if err != nil {
 		return err
 	}
-	defer d.wctx.free(sampleRatePtr)
+	defer d.wctx.free(ctx, sampleRatePtr)
 
-	channelsPtr, err := d.wctx.malloc(1) // unsigned char
+	channelsPtr, err := d.wctx.malloc(ctx, 1) // unsigned char
 	if err != nil {
 		return err
 	}
-	defer d.wctx.free(channelsPtr)
+	defer d.wctx.free(ctx, channelsPtr)
 
-	results, err := d.wctx.fnInit.Call(context.Background(),
+	results, err := d.wctx.fnInit.Call(ctx,
 		uint64(d.decoderPtr),
 		uint64(configPtr),
 		uint64(len(config)),
@@ -110,7 +110,7 @@ func (d *Decoder) Init(config []byte) error {
 }
 
 // Decode decodes a single AAC frame and returns PCM samples.
-func (d *Decoder) Decode(aacFrame []byte) ([]int16, error) {
+func (d *Decoder) Decode(ctx context.Context, aacFrame []byte) ([]int16, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
@@ -131,11 +131,11 @@ func (d *Decoder) Decode(aacFrame []byte) ([]int16, error) {
 	}
 
 	// Allocate input buffer
-	inputPtr, err := d.wctx.malloc(uint32(len(aacFrame))) //nolint:gosec // frame size is bounded by AAC spec
+	inputPtr, err := d.wctx.malloc(ctx, uint32(len(aacFrame))) //nolint:gosec // frame size is bounded by AAC spec
 	if err != nil {
 		return nil, err
 	}
-	defer d.wctx.free(inputPtr)
+	defer d.wctx.free(ctx, inputPtr)
 
 	if !d.wctx.write(inputPtr, aacFrame) {
 		return nil, ErrOutOfMemory
@@ -143,14 +143,14 @@ func (d *Decoder) Decode(aacFrame []byte) ([]int16, error) {
 
 	// Allocate output buffer (max samples per frame: 2048 * channels * 2 bytes)
 	maxSamples := 2048 * int(d.channels)
-	outputPtr, err := d.wctx.malloc(uint32(maxSamples * 2)) //nolint:gosec // bounded by AAC frame size
+	outputPtr, err := d.wctx.malloc(ctx, uint32(maxSamples*2)) //nolint:gosec // bounded by AAC frame size
 	if err != nil {
 		return nil, err
 	}
-	defer d.wctx.free(outputPtr)
+	defer d.wctx.free(ctx, outputPtr)
 
 	// Decode
-	results, err := d.wctx.fnDecode.Call(context.Background(),
+	results, err := d.wctx.fnDecode.Call(ctx,
 		uint64(d.decoderPtr),
 		uint64(inputPtr),
 		uint64(len(aacFrame)),
@@ -197,7 +197,7 @@ func (d *Decoder) Channels() uint8 {
 
 // Close releases decoder resources.
 // It is safe to call Close multiple times.
-func (d *Decoder) Close() error {
+func (d *Decoder) Close(ctx context.Context) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
@@ -206,7 +206,7 @@ func (d *Decoder) Close() error {
 	}
 
 	if d.decoderPtr != 0 {
-		_, _ = d.wctx.fnDestroy.Call(context.Background(), uint64(d.decoderPtr))
+		_, _ = d.wctx.fnDestroy.Call(ctx, uint64(d.decoderPtr))
 		d.decoderPtr = 0
 	}
 

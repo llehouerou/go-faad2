@@ -1,6 +1,7 @@
 package faad2
 
 import (
+	"context"
 	"errors"
 	"io"
 )
@@ -58,7 +59,7 @@ type adtsHeader struct {
 }
 
 // OpenADTS opens an ADTS stream for audio decoding.
-func OpenADTS(r io.Reader) (*ADTSReader, error) {
+func OpenADTS(ctx context.Context, r io.Reader) (*ADTSReader, error) {
 	ar := &ADTSReader{
 		reader: r,
 	}
@@ -84,14 +85,14 @@ func OpenADTS(r io.Reader) (*ADTSReader, error) {
 	config := buildAudioSpecificConfig(header.profile+1, header.samplingFreqIndex, header.channelConfig)
 
 	// Create and initialize decoder
-	decoder, err := NewDecoder()
+	decoder, err := NewDecoder(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	err = decoder.Init(config)
+	err = decoder.Init(ctx, config)
 	if err != nil {
-		decoder.Close()
+		decoder.Close(ctx)
 		return nil, err
 	}
 
@@ -100,14 +101,14 @@ func OpenADTS(r io.Reader) (*ADTSReader, error) {
 	// Read first frame payload and decode (to prime the decoder)
 	payload, err := ar.readPayload(header)
 	if err != nil {
-		decoder.Close()
+		decoder.Close(ctx)
 		return nil, err
 	}
 
 	// Decode first frame (usually produces 0 samples - priming frame)
-	pcm, err := decoder.Decode(payload)
+	pcm, err := decoder.Decode(ctx, payload)
 	if err != nil {
-		decoder.Close()
+		decoder.Close(ctx)
 		return nil, err
 	}
 	ar.framesRead = 1
@@ -123,7 +124,7 @@ func OpenADTS(r io.Reader) (*ADTSReader, error) {
 
 // Read reads decoded PCM samples into the buffer.
 // Returns the number of samples read.
-func (ar *ADTSReader) Read(pcm []int16) (int, error) {
+func (ar *ADTSReader) Read(ctx context.Context, pcm []int16) (int, error) {
 	if ar.decoder == nil {
 		return 0, ErrNotInitialized
 	}
@@ -157,7 +158,7 @@ func (ar *ADTSReader) Read(pcm []int16) (int, error) {
 		}
 
 		// Decode frame
-		samples, err := ar.decoder.Decode(payload)
+		samples, err := ar.decoder.Decode(ctx, payload)
 		if err != nil {
 			return totalRead, err
 		}
@@ -201,9 +202,9 @@ func (ar *ADTSReader) FramesRead() int64 {
 
 // Close releases all resources.
 // It is safe to call Close multiple times.
-func (ar *ADTSReader) Close() error {
+func (ar *ADTSReader) Close(ctx context.Context) error {
 	if ar.decoder != nil {
-		err := ar.decoder.Close()
+		err := ar.decoder.Close(ctx)
 		ar.decoder = nil
 		return err
 	}

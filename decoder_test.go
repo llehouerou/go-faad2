@@ -2,6 +2,7 @@ package faad2
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"io"
 	"os"
@@ -11,11 +12,12 @@ import (
 )
 
 func TestNewDecoder(t *testing.T) {
-	dec, err := NewDecoder()
+	ctx := context.Background()
+	dec, err := NewDecoder(ctx)
 	if err != nil {
 		t.Fatalf("NewDecoder failed: %v", err)
 	}
-	defer dec.Close()
+	defer dec.Close(ctx)
 
 	if dec.decoderPtr == 0 {
 		t.Error("decoder pointer is nil")
@@ -23,37 +25,40 @@ func TestNewDecoder(t *testing.T) {
 }
 
 func TestDecoderInitWithoutConfig(t *testing.T) {
-	dec, err := NewDecoder()
+	ctx := context.Background()
+	dec, err := NewDecoder(ctx)
 	if err != nil {
 		t.Fatalf("NewDecoder failed: %v", err)
 	}
-	defer dec.Close()
+	defer dec.Close(ctx)
 
-	err = dec.Init(nil)
+	err = dec.Init(ctx, nil)
 	if !errors.Is(err, ErrInvalidConfig) {
 		t.Errorf("expected ErrInvalidConfig, got %v", err)
 	}
 
-	err = dec.Init([]byte{})
+	err = dec.Init(ctx, []byte{})
 	if !errors.Is(err, ErrInvalidConfig) {
 		t.Errorf("expected ErrInvalidConfig for empty config, got %v", err)
 	}
 }
 
 func TestDecoderDecodeWithoutInit(t *testing.T) {
-	dec, err := NewDecoder()
+	ctx := context.Background()
+	dec, err := NewDecoder(ctx)
 	if err != nil {
 		t.Fatalf("NewDecoder failed: %v", err)
 	}
-	defer dec.Close()
+	defer dec.Close(ctx)
 
-	_, err = dec.Decode([]byte{0x00, 0x01, 0x02})
+	_, err = dec.Decode(ctx, []byte{0x00, 0x01, 0x02})
 	if !errors.Is(err, ErrNotInitialized) {
 		t.Errorf("expected ErrNotInitialized, got %v", err)
 	}
 }
 
 func TestDecoderWithM4AFile(t *testing.T) {
+	ctx := context.Background()
 	testFile := "testdata/mono_44100.m4a"
 	if _, err := os.Stat(testFile); os.IsNotExist(err) {
 		t.Skip("test file not found, run 'make testdata' first")
@@ -76,13 +81,13 @@ func TestDecoderWithM4AFile(t *testing.T) {
 	t.Logf("AAC config: %d bytes, samples: %d", len(config), len(samples))
 
 	// Create and init decoder
-	dec, err := NewDecoder()
+	dec, err := NewDecoder(ctx)
 	if err != nil {
 		t.Fatalf("NewDecoder failed: %v", err)
 	}
-	defer dec.Close()
+	defer dec.Close(ctx)
 
-	err = dec.Init(config)
+	err = dec.Init(ctx, config)
 	if err != nil {
 		t.Fatalf("Init failed: %v", err)
 	}
@@ -103,7 +108,7 @@ func TestDecoderWithM4AFile(t *testing.T) {
 			break
 		}
 
-		pcm, err := dec.Decode(sample)
+		pcm, err := dec.Decode(ctx, sample)
 		if err != nil {
 			t.Errorf("Decode frame %d failed: %v", i, err)
 			continue
@@ -121,6 +126,7 @@ func TestDecoderWithM4AFile(t *testing.T) {
 }
 
 func TestDecoderStereo(t *testing.T) {
+	ctx := context.Background()
 	testFile := "testdata/stereo_48000.m4a"
 	if _, err := os.Stat(testFile); os.IsNotExist(err) {
 		t.Skip("test file not found, run 'make testdata' first")
@@ -131,13 +137,13 @@ func TestDecoderStereo(t *testing.T) {
 		t.Fatalf("failed to extract AAC from M4A: %v", err)
 	}
 
-	dec, err := NewDecoder()
+	dec, err := NewDecoder(ctx)
 	if err != nil {
 		t.Fatalf("NewDecoder failed: %v", err)
 	}
-	defer dec.Close()
+	defer dec.Close(ctx)
 
-	err = dec.Init(config)
+	err = dec.Init(ctx, config)
 	if err != nil {
 		t.Fatalf("Init failed: %v", err)
 	}
@@ -152,7 +158,7 @@ func TestDecoderStereo(t *testing.T) {
 	// Decode frames (first frame is typically a priming frame with 0 samples)
 	totalSamples := 0
 	for i := 0; i < len(samples) && i < 5; i++ {
-		pcm, err := dec.Decode(samples[i])
+		pcm, err := dec.Decode(ctx, samples[i])
 		if err != nil {
 			t.Fatalf("Decode frame %d failed: %v", i, err)
 		}

@@ -2,6 +2,7 @@ package faad2
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"io"
 	"time"
@@ -52,7 +53,7 @@ type Metadata struct {
 //
 // Note: This function reads the entire file into memory for parsing.
 // For very large files, consider memory constraints.
-func OpenM4A(r io.ReadSeeker) (*M4AReader, error) {
+func OpenM4A(ctx context.Context, r io.ReadSeeker) (*M4AReader, error) {
 	mr := &M4AReader{
 		reader: r,
 	}
@@ -89,14 +90,14 @@ func OpenM4A(r io.ReadSeeker) (*M4AReader, error) {
 	}
 
 	// Create and initialize decoder
-	decoder, err := NewDecoder()
+	decoder, err := NewDecoder(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	err = decoder.Init(info.config)
+	err = decoder.Init(ctx, info.config)
 	if err != nil {
-		decoder.Close()
+		decoder.Close(ctx)
 		return nil, err
 	}
 
@@ -110,7 +111,7 @@ func OpenM4A(r io.ReadSeeker) (*M4AReader, error) {
 
 // Read reads decoded PCM samples into the buffer.
 // Returns number of samples read, or io.EOF when done.
-func (m *M4AReader) Read(pcm []int16) (int, error) {
+func (m *M4AReader) Read(ctx context.Context, pcm []int16) (int, error) {
 	if m.decoder == nil {
 		return 0, ErrNotInitialized
 	}
@@ -152,7 +153,7 @@ func (m *M4AReader) Read(pcm []int16) (int, error) {
 		}
 
 		// Decode sample
-		samples, err := m.decoder.Decode(sampleData)
+		samples, err := m.decoder.Decode(ctx, sampleData)
 		if err != nil {
 			return totalRead, err
 		}
@@ -251,9 +252,9 @@ func (m *M4AReader) Seek(position time.Duration) error {
 
 // Close releases all resources.
 // It is safe to call Close multiple times.
-func (m *M4AReader) Close() error {
+func (m *M4AReader) Close(ctx context.Context) error {
 	if m.decoder != nil {
-		err := m.decoder.Close()
+		err := m.decoder.Close(ctx)
 		m.decoder = nil
 		return err
 	}

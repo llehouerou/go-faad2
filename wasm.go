@@ -36,7 +36,7 @@ var (
 	globalReset bool
 )
 
-func getWasmContext() (*wasmContext, error) {
+func getWasmContext(ctx context.Context) (*wasmContext, error) {
 	globalMu.Lock()
 	defer globalMu.Unlock()
 
@@ -47,7 +47,7 @@ func getWasmContext() (*wasmContext, error) {
 	}
 
 	globalOnce.Do(func() {
-		globalCtx, errGlobal = initWasmContext()
+		globalCtx, errGlobal = initWasmContext(ctx)
 	})
 	return globalCtx, errGlobal
 }
@@ -55,12 +55,12 @@ func getWasmContext() (*wasmContext, error) {
 // Shutdown releases the global WASM runtime resources.
 // After calling Shutdown, any existing Decoder instances must not be used.
 // New Decoder instances can be created after Shutdown, which will reinitialize the runtime.
-func Shutdown() error {
+func Shutdown(ctx context.Context) error {
 	globalMu.Lock()
 	defer globalMu.Unlock()
 
 	if globalCtx != nil && globalCtx.runtime != nil {
-		err := globalCtx.runtime.Close(context.Background())
+		err := globalCtx.runtime.Close(ctx)
 		globalCtx = nil
 		globalReset = true
 		errGlobal = nil
@@ -69,8 +69,7 @@ func Shutdown() error {
 	return nil
 }
 
-func initWasmContext() (*wasmContext, error) {
-	ctx := context.Background()
+func initWasmContext(ctx context.Context) (*wasmContext, error) {
 
 	rt := wazero.NewRuntime(ctx)
 
@@ -119,8 +118,8 @@ func initWasmContext() (*wasmContext, error) {
 }
 
 // malloc allocates memory in the WASM module.
-func (w *wasmContext) malloc(size uint32) (uint32, error) {
-	results, err := w.fnMalloc.Call(context.Background(), uint64(size))
+func (w *wasmContext) malloc(ctx context.Context, size uint32) (uint32, error) {
+	results, err := w.fnMalloc.Call(ctx, uint64(size))
 	if err != nil {
 		return 0, err
 	}
@@ -132,9 +131,9 @@ func (w *wasmContext) malloc(size uint32) (uint32, error) {
 }
 
 // free releases memory in the WASM module.
-func (w *wasmContext) free(ptr uint32) {
+func (w *wasmContext) free(ctx context.Context, ptr uint32) {
 	if ptr != 0 {
-		_, _ = w.fnFree.Call(context.Background(), uint64(ptr))
+		_, _ = w.fnFree.Call(ctx, uint64(ptr))
 	}
 }
 

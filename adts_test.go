@@ -1,6 +1,7 @@
 package faad2
 
 import (
+	"context"
 	"errors"
 	"os"
 	"testing"
@@ -60,6 +61,7 @@ func TestParseADTSHeaderInvalid(t *testing.T) {
 }
 
 func TestOpenADTS(t *testing.T) {
+	ctx := context.Background()
 	testFile := testAACFile
 	if _, err := os.Stat(testFile); os.IsNotExist(err) {
 		t.Skip("test file not found, run 'make testdata' first")
@@ -71,11 +73,11 @@ func TestOpenADTS(t *testing.T) {
 	}
 	defer f.Close()
 
-	reader, err := OpenADTS(f)
+	reader, err := OpenADTS(ctx, f)
 	if err != nil {
 		t.Fatalf("OpenADTS failed: %v", err)
 	}
-	defer reader.Close()
+	defer reader.Close(ctx)
 
 	t.Logf("ADTS stream: sampleRate=%d, channels=%d", reader.SampleRate(), reader.Channels())
 
@@ -88,6 +90,7 @@ func TestOpenADTS(t *testing.T) {
 }
 
 func TestADTSRead(t *testing.T) {
+	ctx := context.Background()
 	testFile := testAACFile
 	if _, err := os.Stat(testFile); os.IsNotExist(err) {
 		t.Skip("test file not found, run 'make testdata' first")
@@ -99,18 +102,18 @@ func TestADTSRead(t *testing.T) {
 	}
 	defer f.Close()
 
-	reader, err := OpenADTS(f)
+	reader, err := OpenADTS(ctx, f)
 	if err != nil {
 		t.Fatalf("OpenADTS failed: %v", err)
 	}
-	defer reader.Close()
+	defer reader.Close(ctx)
 
 	// Read all samples
 	pcm := make([]int16, 4096)
 	totalSamples := 0
 
 	for {
-		n, err := reader.Read(pcm)
+		n, err := reader.Read(ctx, pcm)
 		if err != nil {
 			break
 		}
@@ -136,6 +139,7 @@ func TestADTSRead(t *testing.T) {
 }
 
 func TestADTSReadSmallBuffer(t *testing.T) {
+	ctx := context.Background()
 	testFile := testAACFile
 	if _, err := os.Stat(testFile); os.IsNotExist(err) {
 		t.Skip("test file not found, run 'make testdata' first")
@@ -147,11 +151,11 @@ func TestADTSReadSmallBuffer(t *testing.T) {
 	}
 	defer f.Close()
 
-	reader, err := OpenADTS(f)
+	reader, err := OpenADTS(ctx, f)
 	if err != nil {
 		t.Fatalf("OpenADTS failed: %v", err)
 	}
-	defer reader.Close()
+	defer reader.Close(ctx)
 
 	// Read with small buffer to test buffering logic
 	pcm := make([]int16, 512)
@@ -159,7 +163,7 @@ func TestADTSReadSmallBuffer(t *testing.T) {
 	readCount := 0
 
 	for {
-		n, err := reader.Read(pcm)
+		n, err := reader.Read(ctx, pcm)
 		if err != nil {
 			break
 		}

@@ -1,6 +1,7 @@
 package faad2
 
 import (
+	"context"
 	"os"
 	"testing"
 	"time"
@@ -13,6 +14,7 @@ const (
 )
 
 func TestOpenM4A(t *testing.T) {
+	ctx := context.Background()
 	testFile := testMonoM4A
 	if _, err := os.Stat(testFile); os.IsNotExist(err) {
 		t.Skip("test file not found, run 'make testdata' first")
@@ -24,11 +26,11 @@ func TestOpenM4A(t *testing.T) {
 	}
 	defer f.Close()
 
-	reader, err := OpenM4A(f)
+	reader, err := OpenM4A(ctx, f)
 	if err != nil {
 		t.Fatalf("OpenM4A failed: %v", err)
 	}
-	defer reader.Close()
+	defer reader.Close(ctx)
 
 	t.Logf("M4A: sampleRate=%d, channels=%d, duration=%v",
 		reader.SampleRate(), reader.Channels(), reader.Duration())
@@ -39,6 +41,7 @@ func TestOpenM4A(t *testing.T) {
 }
 
 func TestOpenM4AStereo(t *testing.T) {
+	ctx := context.Background()
 	testFile := testStereoM4A
 	if _, err := os.Stat(testFile); os.IsNotExist(err) {
 		t.Skip("test file not found, run 'make testdata' first")
@@ -50,11 +53,11 @@ func TestOpenM4AStereo(t *testing.T) {
 	}
 	defer f.Close()
 
-	reader, err := OpenM4A(f)
+	reader, err := OpenM4A(ctx, f)
 	if err != nil {
 		t.Fatalf("OpenM4A failed: %v", err)
 	}
-	defer reader.Close()
+	defer reader.Close(ctx)
 
 	t.Logf("M4A stereo: sampleRate=%d, channels=%d, duration=%v",
 		reader.SampleRate(), reader.Channels(), reader.Duration())
@@ -68,6 +71,7 @@ func TestOpenM4AStereo(t *testing.T) {
 }
 
 func TestM4ARead(t *testing.T) {
+	ctx := context.Background()
 	testFile := testMonoM4A
 	if _, err := os.Stat(testFile); os.IsNotExist(err) {
 		t.Skip("test file not found, run 'make testdata' first")
@@ -79,18 +83,18 @@ func TestM4ARead(t *testing.T) {
 	}
 	defer f.Close()
 
-	reader, err := OpenM4A(f)
+	reader, err := OpenM4A(ctx, f)
 	if err != nil {
 		t.Fatalf("OpenM4A failed: %v", err)
 	}
-	defer reader.Close()
+	defer reader.Close(ctx)
 
 	// Read all samples
 	pcm := make([]int16, 4096)
 	totalSamples := 0
 
 	for {
-		n, err := reader.Read(pcm)
+		n, err := reader.Read(ctx, pcm)
 		if err != nil {
 			break
 		}
@@ -115,6 +119,7 @@ func TestM4ARead(t *testing.T) {
 }
 
 func TestM4AReadSmallBuffer(t *testing.T) {
+	ctx := context.Background()
 	testFile := testMonoM4A
 	if _, err := os.Stat(testFile); os.IsNotExist(err) {
 		t.Skip("test file not found, run 'make testdata' first")
@@ -126,11 +131,11 @@ func TestM4AReadSmallBuffer(t *testing.T) {
 	}
 	defer f.Close()
 
-	reader, err := OpenM4A(f)
+	reader, err := OpenM4A(ctx, f)
 	if err != nil {
 		t.Fatalf("OpenM4A failed: %v", err)
 	}
-	defer reader.Close()
+	defer reader.Close(ctx)
 
 	// Read with small buffer to test buffering logic
 	pcm := make([]int16, 512)
@@ -138,7 +143,7 @@ func TestM4AReadSmallBuffer(t *testing.T) {
 	readCount := 0
 
 	for {
-		n, err := reader.Read(pcm)
+		n, err := reader.Read(ctx, pcm)
 		if err != nil {
 			break
 		}
@@ -160,6 +165,7 @@ func TestM4AReadSmallBuffer(t *testing.T) {
 }
 
 func TestM4ADuration(t *testing.T) {
+	ctx := context.Background()
 	testFile := testMonoM4A
 	if _, err := os.Stat(testFile); os.IsNotExist(err) {
 		t.Skip("test file not found, run 'make testdata' first")
@@ -171,11 +177,11 @@ func TestM4ADuration(t *testing.T) {
 	}
 	defer f.Close()
 
-	reader, err := OpenM4A(f)
+	reader, err := OpenM4A(ctx, f)
 	if err != nil {
 		t.Fatalf("OpenM4A failed: %v", err)
 	}
-	defer reader.Close()
+	defer reader.Close(ctx)
 
 	duration := reader.Duration()
 	t.Logf("Duration: %v", duration)
@@ -187,6 +193,7 @@ func TestM4ADuration(t *testing.T) {
 }
 
 func TestM4AMetadata(t *testing.T) {
+	ctx := context.Background()
 	testFile := testMetadataM4A
 	if _, err := os.Stat(testFile); os.IsNotExist(err) {
 		t.Skip("test file not found, run 'make testdata' first")
@@ -198,11 +205,11 @@ func TestM4AMetadata(t *testing.T) {
 	}
 	defer f.Close()
 
-	reader, err := OpenM4A(f)
+	reader, err := OpenM4A(ctx, f)
 	if err != nil {
 		t.Fatalf("OpenM4A failed: %v", err)
 	}
-	defer reader.Close()
+	defer reader.Close(ctx)
 
 	meta := reader.Metadata()
 	t.Logf("Metadata: title=%q, artist=%q, album=%q", meta.Title, meta.Artist, meta.Album)
@@ -212,6 +219,7 @@ func TestM4AMetadata(t *testing.T) {
 }
 
 func TestM4AWithMetadataRead(t *testing.T) {
+	ctx := context.Background()
 	testFile := testMetadataM4A
 	if _, err := os.Stat(testFile); os.IsNotExist(err) {
 		t.Skip("test file not found, run 'make testdata' first")
@@ -223,18 +231,18 @@ func TestM4AWithMetadataRead(t *testing.T) {
 	}
 	defer f.Close()
 
-	reader, err := OpenM4A(f)
+	reader, err := OpenM4A(ctx, f)
 	if err != nil {
 		t.Fatalf("OpenM4A failed: %v", err)
 	}
-	defer reader.Close()
+	defer reader.Close(ctx)
 
 	// Read all samples from 2-second file
 	pcm := make([]int16, 4096)
 	totalSamples := 0
 
 	for {
-		n, err := reader.Read(pcm)
+		n, err := reader.Read(ctx, pcm)
 		if err != nil {
 			break
 		}
@@ -260,6 +268,7 @@ func TestM4AWithMetadataRead(t *testing.T) {
 }
 
 func TestM4ASeek(t *testing.T) {
+	ctx := context.Background()
 	testFile := testMetadataM4A
 	if _, err := os.Stat(testFile); os.IsNotExist(err) {
 		t.Skip("test file not found, run 'make testdata' first")
@@ -271,15 +280,15 @@ func TestM4ASeek(t *testing.T) {
 	}
 	defer f.Close()
 
-	reader, err := OpenM4A(f)
+	reader, err := OpenM4A(ctx, f)
 	if err != nil {
 		t.Fatalf("OpenM4A failed: %v", err)
 	}
-	defer reader.Close()
+	defer reader.Close(ctx)
 
 	// Read some samples first
 	pcm := make([]int16, 4096)
-	_, err = reader.Read(pcm)
+	_, err = reader.Read(ctx, pcm)
 	if err != nil {
 		t.Fatalf("initial read failed: %v", err)
 	}
@@ -303,7 +312,7 @@ func TestM4ASeek(t *testing.T) {
 	}
 
 	// Should still be able to read after seeking
-	n, err := reader.Read(pcm)
+	n, err := reader.Read(ctx, pcm)
 	if err != nil {
 		t.Fatalf("read after seek failed: %v", err)
 	}
@@ -329,13 +338,14 @@ func TestM4ASeek(t *testing.T) {
 	}
 
 	// Should get EOF on next read
-	_, err = reader.Read(pcm)
+	_, err = reader.Read(ctx, pcm)
 	if err == nil {
 		t.Error("expected EOF after seeking past end")
 	}
 }
 
 func TestM4APosition(t *testing.T) {
+	ctx := context.Background()
 	testFile := testMonoM4A
 	if _, err := os.Stat(testFile); os.IsNotExist(err) {
 		t.Skip("test file not found, run 'make testdata' first")
@@ -347,11 +357,11 @@ func TestM4APosition(t *testing.T) {
 	}
 	defer f.Close()
 
-	reader, err := OpenM4A(f)
+	reader, err := OpenM4A(ctx, f)
 	if err != nil {
 		t.Fatalf("OpenM4A failed: %v", err)
 	}
-	defer reader.Close()
+	defer reader.Close(ctx)
 
 	// Initial position should be 0
 	if reader.Position() != 0 {
@@ -363,7 +373,7 @@ func TestM4APosition(t *testing.T) {
 	var lastPos time.Duration
 
 	for i := range 5 {
-		n, err := reader.Read(pcm)
+		n, err := reader.Read(ctx, pcm)
 		if err != nil {
 			break
 		}
@@ -387,6 +397,7 @@ func TestM4APosition(t *testing.T) {
 }
 
 func TestM4AMetadataValues(t *testing.T) {
+	ctx := context.Background()
 	testFile := testMetadataM4A
 	if _, err := os.Stat(testFile); os.IsNotExist(err) {
 		t.Skip("test file not found, run 'make testdata' first")
@@ -398,11 +409,11 @@ func TestM4AMetadataValues(t *testing.T) {
 	}
 	defer f.Close()
 
-	reader, err := OpenM4A(f)
+	reader, err := OpenM4A(ctx, f)
 	if err != nil {
 		t.Fatalf("OpenM4A failed: %v", err)
 	}
-	defer reader.Close()
+	defer reader.Close(ctx)
 
 	meta := reader.Metadata()
 	t.Logf("Metadata: title=%q, artist=%q, album=%q, genre=%q",
