@@ -278,6 +278,10 @@ func parseM4A(r io.ReadSeeker) (*m4aInfo, error) {
 
 	_, err := mp4.ReadBoxStructure(r, func(h *mp4.ReadHandle) (any, error) {
 		switch h.BoxInfo.Type {
+		// Container boxes that need expansion
+		case mp4.BoxTypeMoov(), mp4.BoxTypeMdia(), mp4.BoxTypeMinf(), mp4.BoxTypeStbl(), mp4.BoxTypeStsd():
+			return h.Expand()
+
 		case mp4.BoxTypeTrak():
 			// Reset per-track state when entering a new track
 			audioTrackFound = false
@@ -291,7 +295,7 @@ func parseM4A(r io.ReadSeeker) (*m4aInfo, error) {
 			}
 			mdhd, ok := box.(*mp4.Mdhd)
 			if !ok {
-				return h.Expand()
+				return nil, nil
 			}
 			// Save timescale - we'll use it if this turns out to be an audio track
 			currentTrackTimescale = mdhd.Timescale
@@ -303,7 +307,7 @@ func parseM4A(r io.ReadSeeker) (*m4aInfo, error) {
 			}
 			hdlr, ok := box.(*mp4.Hdlr)
 			if !ok {
-				return h.Expand()
+				return nil, nil
 			}
 			// Check if this is a sound handler
 			if hdlr.HandlerType == [4]byte{'s', 'o', 'u', 'n'} {
@@ -314,7 +318,7 @@ func parseM4A(r io.ReadSeeker) (*m4aInfo, error) {
 
 		case mp4.BoxTypeMp4a():
 			if !audioTrackFound {
-				return h.Expand()
+				return nil, nil // Skip non-audio track mp4a boxes
 			}
 			box, _, err := h.ReadPayload()
 			if err != nil {
@@ -322,14 +326,16 @@ func parseM4A(r io.ReadSeeker) (*m4aInfo, error) {
 			}
 			mp4a, ok := box.(*mp4.AudioSampleEntry)
 			if !ok {
-				return h.Expand()
+				return nil, nil
 			}
 			info.sampleRate = mp4a.SampleRate / 65536 // Fixed point 16.16
 			info.channels = uint8(mp4a.ChannelCount)  //nolint:gosec // ChannelCount is always small
+			// Expand to find esds child box
+			return h.Expand()
 
 		case mp4.BoxTypeEsds():
 			if !audioTrackFound {
-				return h.Expand()
+				return nil, nil // Skip non-audio track esds boxes
 			}
 			box, _, err := h.ReadPayload()
 			if err != nil {
@@ -337,7 +343,7 @@ func parseM4A(r io.ReadSeeker) (*m4aInfo, error) {
 			}
 			esds, ok := box.(*mp4.Esds)
 			if !ok {
-				return h.Expand()
+				return nil, nil
 			}
 			// Find DecoderSpecificInfo (tag 0x05)
 			for _, desc := range esds.Descriptors {
@@ -349,7 +355,7 @@ func parseM4A(r io.ReadSeeker) (*m4aInfo, error) {
 
 		case mp4.BoxTypeStsz():
 			if !audioTrackFound {
-				return h.Expand()
+				return nil, nil // Skip non-audio track
 			}
 			box, _, err := h.ReadPayload()
 			if err != nil {
@@ -357,7 +363,7 @@ func parseM4A(r io.ReadSeeker) (*m4aInfo, error) {
 			}
 			stsz, ok := box.(*mp4.Stsz)
 			if !ok {
-				return h.Expand()
+				return nil, nil
 			}
 			if stsz.SampleSize != 0 {
 				// Fixed size samples
@@ -370,7 +376,7 @@ func parseM4A(r io.ReadSeeker) (*m4aInfo, error) {
 
 		case mp4.BoxTypeStco():
 			if !audioTrackFound {
-				return h.Expand()
+				return nil, nil // Skip non-audio track
 			}
 			box, _, err := h.ReadPayload()
 			if err != nil {
@@ -378,7 +384,7 @@ func parseM4A(r io.ReadSeeker) (*m4aInfo, error) {
 			}
 			stco, ok := box.(*mp4.Stco)
 			if !ok {
-				return h.Expand()
+				return nil, nil
 			}
 			for _, offset := range stco.ChunkOffset {
 				chunkOffsets = append(chunkOffsets, uint64(offset))
@@ -386,7 +392,7 @@ func parseM4A(r io.ReadSeeker) (*m4aInfo, error) {
 
 		case mp4.BoxTypeCo64():
 			if !audioTrackFound {
-				return h.Expand()
+				return nil, nil // Skip non-audio track
 			}
 			box, _, err := h.ReadPayload()
 			if err != nil {
@@ -394,13 +400,13 @@ func parseM4A(r io.ReadSeeker) (*m4aInfo, error) {
 			}
 			co64, ok := box.(*mp4.Co64)
 			if !ok {
-				return h.Expand()
+				return nil, nil
 			}
 			chunkOffsets = co64.ChunkOffset
 
 		case mp4.BoxTypeStsc():
 			if !audioTrackFound {
-				return h.Expand()
+				return nil, nil // Skip non-audio track
 			}
 			box, _, err := h.ReadPayload()
 			if err != nil {
@@ -408,13 +414,13 @@ func parseM4A(r io.ReadSeeker) (*m4aInfo, error) {
 			}
 			stsc, ok := box.(*mp4.Stsc)
 			if !ok {
-				return h.Expand()
+				return nil, nil
 			}
 			stscEntries = stsc.Entries
 
 		case mp4.BoxTypeStts():
 			if !audioTrackFound {
-				return h.Expand()
+				return nil, nil // Skip non-audio track
 			}
 			box, _, err := h.ReadPayload()
 			if err != nil {
@@ -422,7 +428,7 @@ func parseM4A(r io.ReadSeeker) (*m4aInfo, error) {
 			}
 			stts, ok := box.(*mp4.Stts)
 			if !ok {
-				return h.Expand()
+				return nil, nil
 			}
 			sttsEntries = stts.Entries
 
@@ -446,7 +452,7 @@ func parseM4A(r io.ReadSeeker) (*m4aInfo, error) {
 			}
 			data, ok := box.(*mp4.Data)
 			if !ok {
-				return h.Expand()
+				return nil, nil
 			}
 			// Get parent box type to know which metadata field this is
 			// h.Path is []BoxType, so h.Path[len-2] is the grandparent (the metadata item box)
@@ -465,7 +471,9 @@ func parseM4A(r io.ReadSeeker) (*m4aInfo, error) {
 			}
 		}
 
-		return h.Expand()
+		// Skip unknown boxes instead of trying to expand them
+		// This prevents errors on boxes go-mp4 doesn't recognize (e.g., cover art tracks)
+		return nil, nil
 	})
 
 	if err != nil && !errors.Is(err, io.EOF) {
