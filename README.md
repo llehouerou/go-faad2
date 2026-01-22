@@ -20,18 +20,20 @@ go get github.com/llehouerou/go-faad2
 ### Decode M4A file
 
 ```go
+ctx := context.Background()
+
 file, _ := os.Open("audio.m4a")
 defer file.Close()
 
-reader, _ := faad2.OpenM4A(file)
-defer reader.Close()
+reader, _ := faad2.OpenM4A(ctx, file)
+defer reader.Close(ctx)
 
 fmt.Printf("Sample rate: %d, Channels: %d, Duration: %v\n",
     reader.SampleRate(), reader.Channels(), reader.Duration())
 
 pcm := make([]int16, 4096)
 for {
-    n, err := reader.Read(pcm)
+    n, err := reader.Read(ctx, pcm)
     if err == io.EOF {
         break
     }
@@ -42,7 +44,8 @@ for {
 ### Seeking and position
 
 ```go
-reader, _ := faad2.OpenM4A(file)
+reader, _ := faad2.OpenM4A(ctx, file)
+defer reader.Close(ctx)
 
 // Seek to 30 seconds
 reader.Seek(30 * time.Second)
@@ -54,9 +57,10 @@ fmt.Printf("Position: %v\n", reader.Position())
 ### Extract metadata
 
 ```go
-reader, _ := faad2.OpenM4A(file)
-meta := reader.Metadata()
+reader, _ := faad2.OpenM4A(ctx, file)
+defer reader.Close(ctx)
 
+meta := reader.Metadata()
 fmt.Printf("Title: %s\n", meta.Title)
 fmt.Printf("Artist: %s\n", meta.Artist)
 fmt.Printf("Album: %s\n", meta.Album)
@@ -65,13 +69,15 @@ fmt.Printf("Album: %s\n", meta.Album)
 ### Decode ADTS stream (raw AAC)
 
 ```go
+ctx := context.Background()
+
 file, _ := os.Open("audio.aac")
-reader, _ := faad2.OpenADTS(file)
-defer reader.Close()
+reader, _ := faad2.OpenADTS(ctx, file)
+defer reader.Close(ctx)
 
 pcm := make([]int16, 4096)
 for {
-    n, err := reader.Read(pcm)
+    n, err := reader.Read(ctx, pcm)
     if err == io.EOF {
         break
     }
@@ -82,14 +88,16 @@ for {
 ### Decode raw AAC frames (low-level)
 
 ```go
-decoder, _ := faad2.NewDecoder()
-defer decoder.Close()
+ctx := context.Background()
+
+decoder, _ := faad2.NewDecoder(ctx)
+defer decoder.Close(ctx)
 
 // Initialize with AAC codec config (from ADTS or MP4 esds)
-decoder.Init(codecConfig)
+decoder.Init(ctx, codecConfig)
 
 // Decode frames
-pcm, _ := decoder.Decode(aacFrame)
+pcm, _ := decoder.Decode(ctx, aacFrame)
 ```
 
 ## Building the WASM binary
