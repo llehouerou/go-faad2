@@ -52,9 +52,15 @@ func getWasmContext(ctx context.Context) (*wasmContext, error) {
 	return globalCtx, errGlobal
 }
 
-// Shutdown releases the global WASM runtime resources.
-// After calling Shutdown, any existing Decoder instances must not be used.
-// New Decoder instances can be created after Shutdown, which will reinitialize the runtime.
+// Shutdown releases the global WASM runtime and all associated resources.
+//
+// After calling Shutdown:
+//   - All existing [Decoder], [M4AReader], and [ADTSReader] instances become invalid
+//   - Calling methods on closed instances will return errors or panic
+//   - New instances can be created, which will lazily reinitialize the runtime
+//
+// Shutdown is optional but recommended when the application no longer needs
+// AAC decoding, as it frees significant memory used by the WASM runtime.
 func Shutdown(ctx context.Context) error {
 	globalMu.Lock()
 	defer globalMu.Unlock()
@@ -70,14 +76,17 @@ func Shutdown(ctx context.Context) error {
 }
 
 func initWasmContext(ctx context.Context) (*wasmContext, error) {
-
 	rt := wazero.NewRuntime(ctx)
 
 	// Instantiate WASI for fd_close, fd_write, fd_seek
-	wasi_snapshot_preview1.MustInstantiate(ctx, rt)
+	_, err := wasi_snapshot_preview1.Instantiate(ctx, rt)
+	if err != nil {
+		rt.Close(ctx)
+		return nil, err
+	}
 
 	// Provide the env module with emscripten_notify_memory_growth (no-op)
-	_, err := rt.NewHostModuleBuilder("env").
+	_, err = rt.NewHostModuleBuilder("env").
 		NewFunctionBuilder().
 		WithFunc(func(_ context.Context, _ uint32) {
 			// No-op: called when memory grows, we don't need to do anything

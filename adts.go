@@ -23,7 +23,12 @@ var adtsSampleRates = []uint32{
 	16000, 12000, 11025, 8000, 7350, 0, 0, 0,
 }
 
-// ADTSReader reads and decodes audio from ADTS streams (raw AAC).
+// ADTSReader reads and decodes audio from ADTS (Audio Data Transport Stream) format.
+//
+// ADTS is a streaming format for AAC audio, commonly used for raw AAC files (.aac)
+// and streaming applications. Unlike M4A, ADTS does not support seeking.
+//
+// Create an ADTSReader using [OpenADTS] and release resources with [ADTSReader.Close].
 type ADTSReader struct {
 	decoder    *Decoder
 	reader     io.Reader
@@ -59,6 +64,12 @@ type adtsHeader struct {
 }
 
 // OpenADTS opens an ADTS stream for audio decoding.
+//
+// The reader should provide raw ADTS data starting with a valid ADTS sync word (0xFFF).
+// The function reads and decodes the first frame to initialize the decoder.
+//
+// Returns [ErrADTSSyncNotFound] if no valid ADTS header is found,
+// or [ErrInvalidADTS] if the header is malformed.
 func OpenADTS(ctx context.Context, r io.Reader) (*ADTSReader, error) {
 	ar := &ADTSReader{
 		reader: r,
@@ -122,8 +133,12 @@ func OpenADTS(ctx context.Context, r io.Reader) (*ADTSReader, error) {
 	return ar, nil
 }
 
-// Read reads decoded PCM samples into the buffer.
-// Returns the number of samples read.
+// Read reads decoded PCM samples into the provided buffer.
+//
+// Returns the number of samples read into pcm. For stereo audio, each sample
+// pair (L, R) counts as 2 samples. Returns [io.EOF] when the stream ends.
+//
+// The buffer can be any size; the reader handles internal buffering.
 func (ar *ADTSReader) Read(ctx context.Context, pcm []int16) (int, error) {
 	if ar.decoder == nil {
 		return 0, ErrNotInitialized
@@ -185,23 +200,30 @@ func (ar *ADTSReader) Read(ctx context.Context, pcm []int16) (int, error) {
 	return totalRead, nil
 }
 
-// SampleRate returns the audio sample rate.
+// SampleRate returns the audio sample rate in Hz (e.g., 44100, 48000).
 func (ar *ADTSReader) SampleRate() uint32 {
 	return ar.sampleRate
 }
 
-// Channels returns the number of audio channels.
+// Channels returns the number of audio channels (1 for mono, 2 for stereo).
 func (ar *ADTSReader) Channels() uint8 {
 	return ar.channels
 }
 
 // FramesRead returns the number of AAC frames decoded so far.
+//
+// This can be used to estimate playback position when the frame duration is known
+// (typically 1024 samples per frame for AAC-LC).
 func (ar *ADTSReader) FramesRead() int64 {
 	return ar.framesRead
 }
 
-// Close releases all resources.
-// It is safe to call Close multiple times.
+// Close releases all resources associated with the reader.
+//
+// After Close is called, the reader cannot be reused.
+// It is safe to call Close multiple times; subsequent calls are no-ops.
+//
+// Note: Close does not close the underlying io.Reader passed to [OpenADTS].
 func (ar *ADTSReader) Close(ctx context.Context) error {
 	if ar.decoder != nil {
 		err := ar.decoder.Close(ctx)
@@ -305,8 +327,14 @@ func buildAudioSpecificConfig(objectType, samplingFreqIndex, channelConfig uint8
 	return config
 }
 
-// ParseADTSHeader parses an ADTS header from raw bytes.
-// Useful for inspecting ADTS streams without creating a reader.
+// ParseADTSHeader parses an ADTS header from raw bytes without creating a reader.
+//
+// This is useful for inspecting ADTS streams or extracting metadata.
+// The data slice must contain at least 7 bytes (the minimum ADTS header size).
+//
+// Returns the sample rate in Hz, channel count, and frame length in bytes
+// (including the header). Returns [ErrADTSSyncNotFound] if the sync word is
+// not found, or [ErrInvalidADTS] if the header is too short or malformed.
 func ParseADTSHeader(data []byte) (sampleRate uint32, channels uint8, frameLength uint16, err error) {
 	if len(data) < 7 {
 		return 0, 0, 0, ErrInvalidADTS

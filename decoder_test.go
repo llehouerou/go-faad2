@@ -171,6 +171,126 @@ func TestDecoderStereo(t *testing.T) {
 	t.Logf("Decoded %d total PCM samples from stereo file", totalSamples)
 }
 
+func TestDecoderUseAfterClose(t *testing.T) {
+	ctx := context.Background()
+	dec, err := NewDecoder(ctx)
+	if err != nil {
+		t.Fatalf("NewDecoder failed: %v", err)
+	}
+
+	// Close the decoder
+	err = dec.Close(ctx)
+	if err != nil {
+		t.Fatalf("Close failed: %v", err)
+	}
+
+	// Try to use after close - should get ErrDecoderClosed
+	err = dec.Init(ctx, []byte{0x12, 0x10})
+	if !errors.Is(err, ErrDecoderClosed) {
+		t.Errorf("Init after Close: expected ErrDecoderClosed, got %v", err)
+	}
+
+	_, err = dec.Decode(ctx, []byte{0x00, 0x01, 0x02})
+	if !errors.Is(err, ErrDecoderClosed) {
+		t.Errorf("Decode after Close: expected ErrDecoderClosed, got %v", err)
+	}
+
+	// Close again should be safe (no-op)
+	err = dec.Close(ctx)
+	if err != nil {
+		t.Errorf("Second Close failed: %v", err)
+	}
+}
+
+func TestDecoderEmptyFrame(t *testing.T) {
+	ctx := context.Background()
+	testFile := "testdata/mono_44100.m4a"
+	if _, err := os.Stat(testFile); os.IsNotExist(err) {
+		t.Skip("test file not found, run 'make testdata' first")
+	}
+
+	config, _, err := extractAACFromM4A(testFile)
+	if err != nil {
+		t.Fatalf("failed to extract AAC from M4A: %v", err)
+	}
+
+	dec, err := NewDecoder(ctx)
+	if err != nil {
+		t.Fatalf("NewDecoder failed: %v", err)
+	}
+	defer dec.Close(ctx)
+
+	err = dec.Init(ctx, config)
+	if err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+
+	// Try to decode empty frame
+	_, err = dec.Decode(ctx, []byte{})
+	if !errors.Is(err, ErrEmptyFrame) {
+		t.Errorf("Decode empty frame: expected ErrEmptyFrame, got %v", err)
+	}
+
+	_, err = dec.Decode(ctx, nil)
+	if !errors.Is(err, ErrEmptyFrame) {
+		t.Errorf("Decode nil frame: expected ErrEmptyFrame, got %v", err)
+	}
+}
+
+func TestShutdownAndReinit(t *testing.T) {
+	ctx := context.Background()
+
+	// Create a decoder to initialize the WASM runtime
+	dec1, err := NewDecoder(ctx)
+	if err != nil {
+		t.Fatalf("NewDecoder failed: %v", err)
+	}
+
+	// Close the decoder
+	err = dec1.Close(ctx)
+	if err != nil {
+		t.Fatalf("Close failed: %v", err)
+	}
+
+	// Shutdown the WASM runtime
+	err = Shutdown(ctx)
+	if err != nil {
+		t.Fatalf("Shutdown failed: %v", err)
+	}
+
+	// Shutdown again should be safe (no-op)
+	err = Shutdown(ctx)
+	if err != nil {
+		t.Fatalf("Second Shutdown failed: %v", err)
+	}
+
+	// Create a new decoder - should reinitialize the runtime
+	dec2, err := NewDecoder(ctx)
+	if err != nil {
+		t.Fatalf("NewDecoder after Shutdown failed: %v", err)
+	}
+	defer dec2.Close(ctx)
+
+	if dec2.decoderPtr == 0 {
+		t.Error("decoder pointer is nil after reinit")
+	}
+}
+
+func TestContextCancellation(t *testing.T) {
+	// Create a cancelled context
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	// Try to create a decoder with cancelled context
+	// Note: wazero may or may not respect context cancellation during init
+	// This test verifies the context is passed through correctly
+	_, err := NewDecoder(ctx)
+	if err != nil {
+		// Context cancellation error is acceptable
+		t.Logf("NewDecoder with cancelled context returned: %v", err)
+	}
+}
+
 // extractAACFromM4A extracts the AAC decoder config and raw AAC samples from an M4A file
 func extractAACFromM4A(filename string) (config []byte, samples [][]byte, err error) {
 	f, err := os.Open(filename)

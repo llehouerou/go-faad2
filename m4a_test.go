@@ -430,3 +430,66 @@ func TestM4AMetadataValues(t *testing.T) {
 		t.Errorf("expected album 'Test Album', got %q", meta.Album)
 	}
 }
+
+func TestM4ACloseIdempotent(t *testing.T) {
+	ctx := context.Background()
+	testFile := testMonoM4A
+	if _, err := os.Stat(testFile); os.IsNotExist(err) {
+		t.Skip("test file not found, run 'make testdata' first")
+	}
+
+	f, err := os.Open(testFile)
+	if err != nil {
+		t.Fatalf("failed to open test file: %v", err)
+	}
+	defer f.Close()
+
+	reader, err := OpenM4A(ctx, f)
+	if err != nil {
+		t.Fatalf("OpenM4A failed: %v", err)
+	}
+
+	// Close once
+	err = reader.Close(ctx)
+	if err != nil {
+		t.Errorf("First Close failed: %v", err)
+	}
+
+	// Close again - should be safe (no-op)
+	err = reader.Close(ctx)
+	if err != nil {
+		t.Errorf("Second Close failed: %v", err)
+	}
+}
+
+func TestM4AReadAfterClose(t *testing.T) {
+	ctx := context.Background()
+	testFile := testMonoM4A
+	if _, err := os.Stat(testFile); os.IsNotExist(err) {
+		t.Skip("test file not found, run 'make testdata' first")
+	}
+
+	f, err := os.Open(testFile)
+	if err != nil {
+		t.Fatalf("failed to open test file: %v", err)
+	}
+	defer f.Close()
+
+	reader, err := OpenM4A(ctx, f)
+	if err != nil {
+		t.Fatalf("OpenM4A failed: %v", err)
+	}
+
+	// Close the reader
+	err = reader.Close(ctx)
+	if err != nil {
+		t.Fatalf("Close failed: %v", err)
+	}
+
+	// Try to read after close - should get ErrNotInitialized
+	pcm := make([]int16, 4096)
+	_, err = reader.Read(ctx, pcm)
+	if err == nil {
+		t.Error("expected error when reading after Close")
+	}
+}

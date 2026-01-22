@@ -184,6 +184,69 @@ func TestADTSReadSmallBuffer(t *testing.T) {
 	}
 }
 
+func TestADTSCloseIdempotent(t *testing.T) {
+	ctx := context.Background()
+	testFile := testAACFile
+	if _, err := os.Stat(testFile); os.IsNotExist(err) {
+		t.Skip("test file not found, run 'make testdata' first")
+	}
+
+	f, err := os.Open(testFile)
+	if err != nil {
+		t.Fatalf("failed to open test file: %v", err)
+	}
+	defer f.Close()
+
+	reader, err := OpenADTS(ctx, f)
+	if err != nil {
+		t.Fatalf("OpenADTS failed: %v", err)
+	}
+
+	// Close once
+	err = reader.Close(ctx)
+	if err != nil {
+		t.Errorf("First Close failed: %v", err)
+	}
+
+	// Close again - should be safe (no-op)
+	err = reader.Close(ctx)
+	if err != nil {
+		t.Errorf("Second Close failed: %v", err)
+	}
+}
+
+func TestADTSReadAfterClose(t *testing.T) {
+	ctx := context.Background()
+	testFile := testAACFile
+	if _, err := os.Stat(testFile); os.IsNotExist(err) {
+		t.Skip("test file not found, run 'make testdata' first")
+	}
+
+	f, err := os.Open(testFile)
+	if err != nil {
+		t.Fatalf("failed to open test file: %v", err)
+	}
+	defer f.Close()
+
+	reader, err := OpenADTS(ctx, f)
+	if err != nil {
+		t.Fatalf("OpenADTS failed: %v", err)
+	}
+
+	// Close the reader
+	err = reader.Close(ctx)
+	if err != nil {
+		t.Fatalf("Close failed: %v", err)
+	}
+
+	// Try to read after close - should get ErrNotInitialized
+	pcm := make([]int16, 4096)
+	_, err = reader.Read(ctx, pcm)
+	if err == nil {
+		t.Error("expected error when reading after Close")
+	}
+}
+
 func TestBuildAudioSpecificConfig(t *testing.T) {
 	// Test AAC-LC at 44100Hz stereo
 	// objectType=2 (AAC-LC), samplingFreqIndex=4 (44100), channelConfig=2 (stereo)

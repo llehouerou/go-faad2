@@ -10,7 +10,12 @@ import (
 	"github.com/abema/go-mp4"
 )
 
-// M4AReader reads and decodes audio from M4A/MP4 files.
+// M4AReader reads and decodes audio from M4A/MP4 container files.
+//
+// It provides streaming access to decoded PCM audio along with metadata,
+// duration, seeking, and position tracking.
+//
+// Create an M4AReader using [OpenM4A] and release resources with [M4AReader.Close].
 type M4AReader struct {
 	decoder *Decoder
 	reader  io.ReadSeeker
@@ -39,20 +44,29 @@ type sampleInfo struct {
 	duration uint32 // in timescale units
 }
 
-// Metadata contains M4A file metadata.
+// Metadata contains M4A/MP4 file metadata tags.
+//
+// All fields are optional and may be empty if not present in the file.
 type Metadata struct {
-	Title       string
-	Artist      string
-	Album       string
-	Year        int
-	TrackNumber int
-	Genre       string
+	Title       string // Track title (©nam)
+	Artist      string // Artist name (©ART)
+	Album       string // Album name (©alb)
+	Year        int    // Release year (©day)
+	TrackNumber int    // Track number (trkn)
+	Genre       string // Genre (©gen)
 }
 
 // OpenM4A opens an M4A/MP4 file for audio decoding.
 //
-// Note: This function reads the entire file into memory for parsing.
-// For very large files, consider memory constraints.
+// The reader must support seeking as M4A files require random access
+// to read audio samples from various positions.
+//
+// Note: This function reads the entire file into memory for container parsing.
+// For very large files (hundreds of MB), consider memory constraints.
+//
+// Returns [ErrNotM4A] if the file is not a valid MP4 container,
+// [ErrNoAudioTrack] if no AAC audio track is found, or
+// [ErrUnsupportedCodec] if the audio codec is not AAC.
 func OpenM4A(ctx context.Context, r io.ReadSeeker) (*M4AReader, error) {
 	mr := &M4AReader{
 		reader: r,
@@ -109,8 +123,13 @@ func OpenM4A(ctx context.Context, r io.ReadSeeker) (*M4AReader, error) {
 	return mr, nil
 }
 
-// Read reads decoded PCM samples into the buffer.
-// Returns number of samples read, or io.EOF when done.
+// Read reads decoded PCM samples into the provided buffer.
+//
+// Returns the number of samples read into pcm. For stereo audio, each sample
+// pair (L, R) counts as 2 samples. Returns [io.EOF] when all audio has been read.
+//
+// The buffer can be any size; the reader handles internal buffering.
+// Smaller buffers result in more Read calls but use less memory.
 func (m *M4AReader) Read(ctx context.Context, pcm []int16) (int, error) {
 	if m.decoder == nil {
 		return 0, ErrNotInitialized
@@ -179,27 +198,29 @@ func (m *M4AReader) Read(ctx context.Context, pcm []int16) (int, error) {
 	return totalRead, nil
 }
 
-// SampleRate returns the audio sample rate.
+// SampleRate returns the audio sample rate in Hz (e.g., 44100, 48000).
 func (m *M4AReader) SampleRate() uint32 {
 	return m.sampleRate
 }
 
-// Channels returns the number of audio channels.
+// Channels returns the number of audio channels (1 for mono, 2 for stereo).
 func (m *M4AReader) Channels() uint8 {
 	return m.channels
 }
 
-// Duration returns the total duration of the audio.
+// Duration returns the total duration of the audio track.
 func (m *M4AReader) Duration() time.Duration {
 	return m.duration
 }
 
-// Metadata returns the file metadata.
+// Metadata returns the file's metadata (title, artist, album, etc.).
+//
+// Fields may be empty if the file does not contain the corresponding metadata.
 func (m *M4AReader) Metadata() Metadata {
 	return m.metadata
 }
 
-// Position returns the current playback position.
+// Position returns the current playback position based on samples read so far.
 func (m *M4AReader) Position() time.Duration {
 	if m.timescale == 0 || m.currentIdx == 0 {
 		return 0
@@ -214,8 +235,16 @@ func (m *M4AReader) Position() time.Duration {
 	return time.Duration(totalDuration) * time.Second / time.Duration(m.timescale) //nolint:gosec // duration fits in int64
 }
 
-// Seek seeks to a specific time position.
-// The actual position after seeking may be slightly different due to frame boundaries.
+// Seek moves the playback position to the specified time.
+//
+// The actual position after seeking may differ slightly from the requested
+// position due to AAC frame boundaries. Use [M4AReader.Position] to get the
+// actual position after seeking.
+//
+// Seeking past the end of the file positions at EOF; the next [M4AReader.Read]
+// will return [io.EOF].
+//
+// Returns [ErrSeekUnavailable] if the file lacks timing information.
 func (m *M4AReader) Seek(position time.Duration) error {
 	if m.timescale == 0 {
 		return ErrSeekUnavailable
@@ -250,8 +279,12 @@ func (m *M4AReader) Seek(position time.Duration) error {
 	return nil
 }
 
-// Close releases all resources.
-// It is safe to call Close multiple times.
+// Close releases all resources associated with the reader.
+//
+// After Close is called, the reader cannot be reused.
+// It is safe to call Close multiple times; subsequent calls are no-ops.
+//
+// Note: Close does not close the underlying io.ReadSeeker passed to [OpenM4A].
 func (m *M4AReader) Close(ctx context.Context) error {
 	if m.decoder != nil {
 		err := m.decoder.Close(ctx)

@@ -1,3 +1,29 @@
+// Package faad2 provides AAC audio decoding using the FAAD2 library compiled to WebAssembly.
+//
+// The package supports decoding AAC audio from:
+//   - M4A/MP4 container files via [OpenM4A]
+//   - Raw ADTS streams via [OpenADTS]
+//   - Direct frame decoding via [Decoder]
+//
+// Basic usage with M4A files:
+//
+//	reader, err := faad2.OpenM4A(ctx, file)
+//	if err != nil {
+//	    log.Fatal(err)
+//	}
+//	defer reader.Close(ctx)
+//
+//	pcm := make([]int16, 4096)
+//	for {
+//	    n, err := reader.Read(ctx, pcm)
+//	    if err != nil {
+//	        break
+//	    }
+//	    // Process pcm[:n] samples...
+//	}
+//
+// The package uses a global WASM runtime that is lazily initialized on first use.
+// Call [Shutdown] to release WASM resources when done.
 package faad2
 
 import (
@@ -5,7 +31,13 @@ import (
 	"sync"
 )
 
-// Decoder represents an AAC decoder instance.
+// Decoder is a low-level AAC decoder that decodes individual AAC frames.
+//
+// For most use cases, prefer [OpenM4A] or [OpenADTS] which handle container
+// parsing and provide a simpler streaming interface.
+//
+// A Decoder must be initialized with [Decoder.Init] before calling [Decoder.Decode].
+// The decoder is safe for concurrent use after initialization.
 type Decoder struct {
 	mu          sync.Mutex
 	wctx        *wasmContext
@@ -16,7 +48,10 @@ type Decoder struct {
 	channels    uint8
 }
 
-// NewDecoder creates a new AAC decoder.
+// NewDecoder creates a new AAC decoder instance.
+//
+// The decoder must be initialized with [Decoder.Init] before use.
+// Call [Decoder.Close] when done to release resources.
 func NewDecoder(ctx context.Context) (*Decoder, error) {
 	wctx, err := getWasmContext(ctx)
 	if err != nil {
@@ -39,8 +74,14 @@ func NewDecoder(ctx context.Context) (*Decoder, error) {
 	}, nil
 }
 
-// Init initializes the decoder with AAC codec configuration
-// (typically from MP4 esds box or ADTS header).
+// Init initializes the decoder with an AudioSpecificConfig.
+//
+// The config parameter is the AAC AudioSpecificConfig, typically extracted from:
+//   - The esds box in M4A/MP4 files
+//   - ADTS frame headers (converted via internal helper)
+//
+// Init must be called exactly once before [Decoder.Decode].
+// Returns [ErrInvalidConfig] if the configuration is nil, empty, or invalid.
 func (d *Decoder) Init(ctx context.Context, config []byte) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -109,7 +150,14 @@ func (d *Decoder) Init(ctx context.Context, config []byte) error {
 	return nil
 }
 
-// Decode decodes a single AAC frame and returns PCM samples.
+// Decode decodes a single AAC frame and returns interleaved PCM samples.
+//
+// The returned slice contains 16-bit signed PCM samples. For stereo audio,
+// samples are interleaved (L, R, L, R, ...). The number of samples per frame
+// is typically 1024 or 2048 per channel, depending on the AAC profile.
+//
+// Returns [ErrNotInitialized] if [Decoder.Init] has not been called,
+// [ErrEmptyFrame] if aacFrame is empty, or [ErrDecodeFailed] on decode error.
 func (d *Decoder) Decode(ctx context.Context, aacFrame []byte) ([]int16, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -181,14 +229,18 @@ func (d *Decoder) Decode(ctx context.Context, aacFrame []byte) ([]int16, error) 
 	return pcm, nil
 }
 
-// SampleRate returns the sample rate after initialization.
+// SampleRate returns the audio sample rate in Hz (e.g., 44100, 48000).
+//
+// Returns 0 if the decoder has not been initialized.
 func (d *Decoder) SampleRate() uint32 {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	return d.sampleRate
 }
 
-// Channels returns the number of channels after initialization.
+// Channels returns the number of audio channels (1 for mono, 2 for stereo).
+//
+// Returns 0 if the decoder has not been initialized.
 func (d *Decoder) Channels() uint8 {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -196,7 +248,9 @@ func (d *Decoder) Channels() uint8 {
 }
 
 // Close releases decoder resources.
-// It is safe to call Close multiple times.
+//
+// After Close is called, the decoder cannot be reused.
+// It is safe to call Close multiple times; subsequent calls are no-ops.
 func (d *Decoder) Close(ctx context.Context) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
