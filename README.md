@@ -5,7 +5,6 @@ Pure Go AAC audio decoder using FAAD2 compiled to WebAssembly.
 ## Features
 
 - **Pure Go** - No CGO dependencies, cross-compiles easily
-- **M4A/MP4 support** - Built-in demuxer for M4A files with seeking and metadata
 - **ADTS support** - Decode raw AAC streams (ADTS format)
 - **Low-level API** - Decode raw AAC frames directly
 
@@ -16,55 +15,6 @@ go get github.com/llehouerou/go-faad2
 ```
 
 ## Usage
-
-### Decode M4A file
-
-```go
-ctx := context.Background()
-
-file, _ := os.Open("audio.m4a")
-defer file.Close()
-
-reader, _ := faad2.OpenM4A(ctx, file)
-defer reader.Close(ctx)
-
-fmt.Printf("Sample rate: %d, Channels: %d, Duration: %v\n",
-    reader.SampleRate(), reader.Channels(), reader.Duration())
-
-pcm := make([]int16, 4096)
-for {
-    n, err := reader.Read(ctx, pcm)
-    if err == io.EOF {
-        break
-    }
-    // Process pcm[:n]
-}
-```
-
-### Seeking and position
-
-```go
-reader, _ := faad2.OpenM4A(ctx, file)
-defer reader.Close(ctx)
-
-// Seek to 30 seconds
-reader.Seek(30 * time.Second)
-
-// Get current position
-fmt.Printf("Position: %v\n", reader.Position())
-```
-
-### Extract metadata
-
-```go
-reader, _ := faad2.OpenM4A(ctx, file)
-defer reader.Close(ctx)
-
-meta := reader.Metadata()
-fmt.Printf("Title: %s\n", meta.Title)
-fmt.Printf("Artist: %s\n", meta.Artist)
-fmt.Printf("Album: %s\n", meta.Album)
-```
 
 ### Decode ADTS stream (raw AAC)
 
@@ -93,7 +43,7 @@ ctx := context.Background()
 decoder, _ := faad2.NewDecoder(ctx)
 defer decoder.Close(ctx)
 
-// Initialize with AAC codec config (from ADTS or MP4 esds)
+// Initialize with AAC codec config (AudioSpecificConfig)
 decoder.Init(ctx, codecConfig)
 
 // Decode frames
@@ -130,4 +80,3 @@ GPL-2.0-or-later (required by FAAD2)
 
 - [FAAD2](https://github.com/knik0/faad2) - AAC decoder
 - [wazero](https://github.com/tetratelabs/wazero) - WebAssembly runtime
-- [go-mp4](https://github.com/abema/go-mp4) - MP4 parser

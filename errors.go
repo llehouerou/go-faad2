@@ -15,21 +15,9 @@ var (
 	// ErrNotInitialized is returned when trying to decode without initialization.
 	ErrNotInitialized = errors.New("faad2: decoder not initialized")
 
-	// ErrNotM4A is returned when the input is not a valid M4A/MP4 file.
-	ErrNotM4A = errors.New("faad2: not an M4A/MP4 file")
-
-	// ErrNoAudioTrack is returned when no AAC audio track is found.
-	ErrNoAudioTrack = errors.New("faad2: no AAC audio track found")
-
-	// ErrUnsupportedCodec is returned when the audio codec is not AAC.
-	ErrUnsupportedCodec = errors.New("faad2: unsupported audio codec (not AAC)")
-
 	// ErrDecoderClosed is returned when trying to use a closed decoder.
 	ErrDecoderClosed = errors.New("faad2: decoder is closed")
 
 	// ErrEmptyFrame is returned when trying to decode an empty AAC frame.
 	ErrEmptyFrame = errors.New("faad2: empty AAC frame")
-
-	// ErrSeekUnavailable is returned when seeking is not available (e.g., no timescale info).
-	ErrSeekUnavailable = errors.New("faad2: seek not available")
 )
