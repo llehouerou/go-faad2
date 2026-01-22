@@ -11,6 +11,7 @@ type Decoder struct {
 	wctx        *wasmContext
 	decoderPtr  uint32
 	initialized bool
+	closed      bool
 	sampleRate  uint32
 	channels    uint8
 }
@@ -43,6 +44,10 @@ func NewDecoder() (*Decoder, error) {
 func (d *Decoder) Init(config []byte) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+
+	if d.closed {
+		return ErrDecoderClosed
+	}
 
 	if len(config) == 0 {
 		return ErrInvalidConfig
@@ -109,8 +114,20 @@ func (d *Decoder) Decode(aacFrame []byte) ([]int16, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
+	if d.closed {
+		return nil, ErrDecoderClosed
+	}
+
 	if !d.initialized {
 		return nil, ErrNotInitialized
+	}
+
+	if len(aacFrame) == 0 {
+		return nil, ErrEmptyFrame
+	}
+
+	if d.channels == 0 {
+		return nil, ErrInvalidConfig
 	}
 
 	// Allocate input buffer
@@ -157,7 +174,8 @@ func (d *Decoder) Decode(aacFrame []byte) ([]int16, error) {
 
 	pcm := make([]int16, numSamples)
 	for i := range pcm {
-		pcm[i] = int16(pcmBytes[i*2]) | int16(pcmBytes[i*2+1])<<8
+		// Build uint16 from little-endian bytes, then reinterpret as int16
+		pcm[i] = int16(uint16(pcmBytes[i*2]) | uint16(pcmBytes[i*2+1])<<8) //nolint:gosec // intentional bit reinterpretation
 	}
 
 	return pcm, nil
@@ -165,23 +183,33 @@ func (d *Decoder) Decode(aacFrame []byte) ([]int16, error) {
 
 // SampleRate returns the sample rate after initialization.
 func (d *Decoder) SampleRate() uint32 {
+	d.mu.Lock()
+	defer d.mu.Unlock()
 	return d.sampleRate
 }
 
 // Channels returns the number of channels after initialization.
 func (d *Decoder) Channels() uint8 {
+	d.mu.Lock()
+	defer d.mu.Unlock()
 	return d.channels
 }
 
 // Close releases decoder resources.
+// It is safe to call Close multiple times.
 func (d *Decoder) Close() error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+
+	if d.closed {
+		return nil
+	}
 
 	if d.decoderPtr != 0 {
 		_, _ = d.wctx.fnDestroy.Call(context.Background(), uint64(d.decoderPtr))
 		d.decoderPtr = 0
 	}
 
+	d.closed = true
 	return nil
 }

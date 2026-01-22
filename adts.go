@@ -1,7 +1,6 @@
 package faad2
 
 import (
-	"encoding/binary"
 	"errors"
 	"io"
 )
@@ -201,14 +200,23 @@ func (ar *ADTSReader) FramesRead() int64 {
 }
 
 // Close releases all resources.
+// It is safe to call Close multiple times.
 func (ar *ADTSReader) Close() error {
 	if ar.decoder != nil {
-		return ar.decoder.Close()
+		err := ar.decoder.Close()
+		ar.decoder = nil
+		return err
 	}
 	return nil
 }
 
+// maxResyncBytes is the maximum number of bytes to search for a sync word
+// when the stream becomes desynchronized.
+const maxResyncBytes = 8192
+
 // readHeader reads and parses an ADTS frame header.
+// If the sync word is not found at the current position, it will attempt
+// to resync by searching for the next valid sync word.
 func (ar *ADTSReader) readHeader() (*adtsHeader, error) {
 	// Read minimum header (7 bytes without CRC)
 	_, err := io.ReadFull(ar.reader, ar.headerBuf[:7])
@@ -219,7 +227,11 @@ func (ar *ADTSReader) readHeader() (*adtsHeader, error) {
 	// Check sync word (12 bits)
 	syncWord := uint16(ar.headerBuf[0])<<4 | uint16(ar.headerBuf[1]>>4)
 	if syncWord != 0xFFF {
-		return nil, ErrADTSSyncNotFound
+		// Try to resync by searching for the sync word
+		if err := ar.resync(); err != nil {
+			return nil, err
+		}
+		syncWord = uint16(ar.headerBuf[0])<<4 | uint16(ar.headerBuf[1]>>4)
 	}
 
 	header := &adtsHeader{
@@ -317,5 +329,44 @@ func ParseADTSHeader(data []byte) (sampleRate uint32, channels uint8, frameLengt
 	return sampleRate, channels, frameLength, nil
 }
 
-// Helper to suppress unused import warning
-var _ = binary.BigEndian
+// resync attempts to find the next valid ADTS sync word after desynchronization.
+// It searches up to maxResyncBytes bytes for a valid sync word.
+// On success, ar.headerBuf contains the new header.
+func (ar *ADTSReader) resync() error {
+	// We already have 7 bytes in headerBuf that didn't have a valid sync.
+	// Start searching from byte 1 of what we have.
+	searchBuf := make([]byte, maxResyncBytes)
+	copy(searchBuf, ar.headerBuf[1:7]) // Copy remaining 6 bytes
+	bytesInBuf := 6
+
+	// Read more bytes to search through
+	n, err := ar.reader.Read(searchBuf[bytesInBuf:])
+	if err != nil && n == 0 {
+		return ErrADTSSyncNotFound
+	}
+	bytesInBuf += n
+
+	// Search for sync word (0xFF followed by 0xFx where x has bit 4 set)
+	for i := range bytesInBuf - 1 {
+		// Skip if not a sync word
+		if searchBuf[i] != 0xFF || (searchBuf[i+1]&0xF0) != 0xF0 {
+			continue
+		}
+
+		// Found potential sync word, need at least 7 bytes for header
+		if i+7 <= bytesInBuf {
+			copy(ar.headerBuf[:7], searchBuf[i:i+7])
+			return nil
+		}
+
+		// Need to read more bytes for the full header
+		copy(ar.headerBuf[:], searchBuf[i:bytesInBuf])
+		_, err := io.ReadFull(ar.reader, ar.headerBuf[bytesInBuf-i:7])
+		if err != nil {
+			return err
+		}
+		return nil
+	}
+
+	return ErrADTSSyncNotFound
+}

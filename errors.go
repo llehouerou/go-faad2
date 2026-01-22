@@ -23,4 +23,13 @@ var (
 
 	// ErrUnsupportedCodec is returned when the audio codec is not AAC.
 	ErrUnsupportedCodec = errors.New("faad2: unsupported audio codec (not AAC)")
+
+	// ErrDecoderClosed is returned when trying to use a closed decoder.
+	ErrDecoderClosed = errors.New("faad2: decoder is closed")
+
+	// ErrEmptyFrame is returned when trying to decode an empty AAC frame.
+	ErrEmptyFrame = errors.New("faad2: empty AAC frame")
+
+	// ErrSeekUnavailable is returned when seeking is not available (e.g., no timescale info).
+	ErrSeekUnavailable = errors.New("faad2: seek not available")
 )

@@ -29,16 +29,44 @@ type wasmContext struct {
 }
 
 var (
-	globalCtx  *wasmContext
-	globalOnce sync.Once
-	errGlobal  error
+	globalCtx   *wasmContext
+	globalOnce  sync.Once
+	globalMu    sync.Mutex
+	errGlobal   error
+	globalReset bool
 )
 
 func getWasmContext() (*wasmContext, error) {
+	globalMu.Lock()
+	defer globalMu.Unlock()
+
+	if globalReset {
+		// Reset the once so we can reinitialize after shutdown
+		globalOnce = sync.Once{}
+		globalReset = false
+	}
+
 	globalOnce.Do(func() {
 		globalCtx, errGlobal = initWasmContext()
 	})
 	return globalCtx, errGlobal
+}
+
+// Shutdown releases the global WASM runtime resources.
+// After calling Shutdown, any existing Decoder instances must not be used.
+// New Decoder instances can be created after Shutdown, which will reinitialize the runtime.
+func Shutdown() error {
+	globalMu.Lock()
+	defer globalMu.Unlock()
+
+	if globalCtx != nil && globalCtx.runtime != nil {
+		err := globalCtx.runtime.Close(context.Background())
+		globalCtx = nil
+		globalReset = true
+		errGlobal = nil
+		return err
+	}
+	return nil
 }
 
 func initWasmContext() (*wasmContext, error) {
