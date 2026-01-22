@@ -1,6 +1,6 @@
 module github.com/llehouerou/go-faad2
 
-go 1.25.6
+go 1.25.5
 
 require (
 	github.com/abema/go-mp4 v1.4.1 // indirect
